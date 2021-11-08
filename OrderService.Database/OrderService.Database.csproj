@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Scripts\0001_createtables.sql" />
+    <None Remove="Scripts\0002_addtimestamp.sql" />
+    <None Remove="Scripts\0003_addtestdata.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Scripts\0003_addtestdata.sql" />
+    <EmbeddedResource Include="Scripts\0002_addtimestamp.sql" />
+    <EmbeddedResource Include="Scripts\0001_createtables.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="dbup-core" Version="4.5.0" />
+    <PackageReference Include="dbup-sqlserver" Version="4.5.0" />
+  </ItemGroup>
+
+</Project>
