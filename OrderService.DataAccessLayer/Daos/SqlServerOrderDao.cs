@@ -17,8 +17,8 @@ namespace OrderService.DataAccessLayer.Daos
         public Order Create(Order model)
         {
             return CreateWithNoTransaction(model);
-        }        
-        
+        }
+
         // creates an order without transaction
         private Order CreateWithNoTransaction(Order model)
         {
@@ -258,15 +258,14 @@ namespace OrderService.DataAccessLayer.Daos
             }
         }
 
-        // updating an order using pessimistic concurrency control with an implicit transaction
+        // updating an order using pessimistic concurrency control with an explicit transaction
+        // NOTE! using the explicit transaction this just for demo purpose, it is much easier to use an implicit transaction
         private bool UpdateWithPessimisticConcurrencyControl(Order model)
         {
+            using IDbConnection connection = DataContext.Open();
+            using IDbTransaction transaction = connection.BeginTransaction();
             try
             {
-                using TransactionScope scope = new();
-
-                using IDbConnection connection = DataContext.Open();
-
                 Order oldOrder = Read(o => o.Id == model.Id).Single();
 
                 string updateOrderSql = "UPDATE Orders SET CustomerName = @CustomerName WHERE Id = @Id";
@@ -278,7 +277,10 @@ namespace OrderService.DataAccessLayer.Daos
                 int rowsAffected = connection.Execute(updateOrderSql, model);
 
                 if (rowsAffected != 1)
+                {
+                    transaction.Rollback();
                     return false;
+                }
 
                 // deleting removed orderlines
                 IEnumerable<Orderline> orderLinesToDelete = oldOrder.Orderlines.Where(oldOl => !model.Orderlines.Any(newOl => newOl.Id == oldOl.Id));
@@ -286,7 +288,10 @@ namespace OrderService.DataAccessLayer.Daos
                 {
                     rowsAffected = connection.Execute(deleteOrderlineSql, orderline);
                     if (rowsAffected != 1)
+                    {
+                        transaction.Rollback();
                         return false;
+                    }
                 }
 
                 // updating orderlines
@@ -302,7 +307,10 @@ namespace OrderService.DataAccessLayer.Daos
                         orderline.Quantity
                     });
                     if (rowsAffected != 1)
+                    {
+                        transaction.Rollback();
                         return false;
+                    }
                 }
 
                 foreach (Orderline orderline in model.Orderlines.Where(ol => !ol.Id.HasValue))
@@ -316,14 +324,18 @@ namespace OrderService.DataAccessLayer.Daos
                         orderline.Quantity
                     });
                     if (rowsAffected != 1)
+                    {
+                        transaction.Rollback();
                         return false;
+                    }
                 }
 
-                scope.Complete(); // Committing transaction
+                transaction.Commit(); // Committing transaction
                 return true;
             }
             catch (Exception ex)
             {
+                transaction.Rollback(); // Rolling back transaction
                 // dont let the exceptions disappear in cyberspace...
                 throw new DaoException($"An error ocurred while updating {model}", ex);
             }
