@@ -4,6 +4,8 @@ using OrderService.Model;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Transactions;
 
 namespace OrderService.DataAccessLayer.Tests
 {
@@ -29,7 +31,7 @@ namespace OrderService.DataAccessLayer.Tests
         [TestCleanup]
         public void Cleanup()
         {
-            DataBaseVersion.Drop(_connectionString);
+            //DataBaseVersion.Drop(_connectionString);
         }
         #endregion
 
@@ -78,6 +80,8 @@ namespace OrderService.DataAccessLayer.Tests
 
             order1.Orderlines.RemoveAt(0);
 
+            //Thread.Sleep(20000);
+
             bool test = _orderDao.Update(order1);
 
             Assert.IsTrue(test);
@@ -90,11 +94,19 @@ namespace OrderService.DataAccessLayer.Tests
         [TestMethod]
         public void ShouldUpdateOrderAndAddOrderline()
         {
+            TransactionOptions options = new()
+            {
+                IsolationLevel = IsolationLevel.Serializable
+            };
+            using TransactionScope scope = new(TransactionScopeOption.Required, options);
+
             Order order1 = _orderDao.Read(o => o.Id == 1).Single();
 
             order1.Orderlines.Add(new Orderline { Product = "Americano", UnitPrice = 19.99, Quantity = 2 });
 
             bool test = _orderDao.Update(order1);
+
+            scope.Complete();
 
             Assert.IsTrue(test);
 

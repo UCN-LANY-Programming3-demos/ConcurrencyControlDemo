@@ -16,7 +16,7 @@ namespace OrderService.DataAccessLayer.Daos
 
         public Order Create(Order model)
         {
-            return CreateWithNoTransaction(model);
+            return CreateWithImplicitTransaction(model);
         }
 
         // creates an order without transaction
@@ -29,6 +29,7 @@ namespace OrderService.DataAccessLayer.Daos
                 // inserting order
                 string insertOrderSql = "INSERT INTO Orders (CustomerName) VALUES (@CustomerName); SELECT SCOPE_IDENTITY();";
                 int orderId = connection.ExecuteScalar<int>(insertOrderSql, model);
+                model.Id = orderId;
 
                 // inserting orderlines
                 string insertOrderlineSql = "INSERT INTO Orderlines (OrderId, Product, UnitPrice, Quantity) VALUES (@OrderId, @Product, @UnitPrice, @Quantity); SELECT SCOPE_IDENTITY();";
@@ -43,11 +44,11 @@ namespace OrderService.DataAccessLayer.Daos
                             orderline.Quantity
                         });
                 }
-                model.Id = orderId;
+               
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // just let the exceptions disappear in cyberspace...
+                //hrow ex;
             }
             return model;
         }
@@ -55,7 +56,11 @@ namespace OrderService.DataAccessLayer.Daos
         // creates an order using an implicit transaction
         private Order CreateWithImplicitTransaction(Order model)
         {
-            using TransactionScope scope = new();
+
+            TransactionOptions options = new();
+            options.IsolationLevel = System.Transactions.IsolationLevel.ReadCommitted;
+            using TransactionScope scope = new(TransactionScopeOption.Required, options);
+
             try
             {
                 using IDbConnection connection = DataContext.Open();
@@ -119,7 +124,7 @@ namespace OrderService.DataAccessLayer.Daos
 
         public bool Update(Order model)
         {
-            return UpdateWithNoConcurrencyControl(model);
+            return UpdateWithPessimisticConcurrencyControl(model);
         }
 
         // updating an order without any concurrency control
@@ -263,10 +268,21 @@ namespace OrderService.DataAccessLayer.Daos
         private bool UpdateWithPessimisticConcurrencyControl(Order model)
         {
             using IDbConnection connection = DataContext.Open();
-            using IDbTransaction transaction = connection.BeginTransaction();
+            //using IDbTransaction transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+            TransactionOptions options = new()
+            {
+                IsolationLevel = System.Transactions.IsolationLevel.Serializable
+            };
+            using TransactionScope scope = new(TransactionScopeOption.Required, options);
+
             try
             {
-                Order oldOrder = Read(o => o.Id == model.Id).Single();
+                string selectOrderSql = "SELECT * FROM Orders WHERE Id = @Id";
+                string selectOrderLinesSql = "SELECT * FROM Orderlines WHERE OrderId = @OrderId";
+
+                Order oldOrder = connection.Query<Order>(selectOrderSql, model).Single(); // Read(o => o.Id == model.Id).Single();
+                oldOrder.Orderlines = connection.Query<Orderline>(selectOrderLinesSql, new { OrderId = model.Id }).ToList();
 
                 string updateOrderSql = "UPDATE Orders SET CustomerName = @CustomerName WHERE Id = @Id";
                 string updateOrderlineSql = "UPDATE Orderlines SET OrderId = @OrderId, Product = @Product, UnitPrice = @UnitPrice, Quantity = @Quantity  WHERE Id = @Id";
@@ -278,7 +294,7 @@ namespace OrderService.DataAccessLayer.Daos
 
                 if (rowsAffected != 1)
                 {
-                    transaction.Rollback();
+                    //transaction.Rollback();
                     return false;
                 }
 
@@ -289,7 +305,7 @@ namespace OrderService.DataAccessLayer.Daos
                     rowsAffected = connection.Execute(deleteOrderlineSql, orderline);
                     if (rowsAffected != 1)
                     {
-                        transaction.Rollback();
+                        //.Rollback();
                         return false;
                     }
                 }
@@ -308,7 +324,7 @@ namespace OrderService.DataAccessLayer.Daos
                     });
                     if (rowsAffected != 1)
                     {
-                        transaction.Rollback();
+                        //transaction.Rollback();
                         return false;
                     }
                 }
@@ -325,17 +341,18 @@ namespace OrderService.DataAccessLayer.Daos
                     });
                     if (rowsAffected != 1)
                     {
-                        transaction.Rollback();
+                        //transaction.Rollback();
                         return false;
                     }
                 }
 
-                transaction.Commit(); // Committing transaction
+                //transaction.Commit(); // Committing transaction
+                scope.Complete();
                 return true;
             }
             catch (Exception ex)
             {
-                transaction.Rollback(); // Rolling back transaction
+                //transaction.Rollback(); // Rolling back transaction
                 // dont let the exceptions disappear in cyberspace...
                 throw new DaoException($"An error ocurred while updating {model}", ex);
             }
